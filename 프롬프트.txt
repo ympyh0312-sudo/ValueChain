@@ -1,0 +1,360 @@
+_BASE_RULES = """\
+
+COMMON OUTPUT RULES (apply to ALL sectors):
+- If DART annual report text is provided, use it as the PRIMARY source (official KRX disclosure)
+- Include ONLY relationships with confidence_score >= 0.6
+- Maximum 5 suppliers + 5 buyers (prioritize by strategic/systemic importance)
+- Tickers: NYSE/NASDAQ symbols for US; 6-digit KRX code for Korea (e.g. 005930); ADR suffix for Japanese ADRs
+- dependency_score: criticality to the BUYER (0.9=irreplaceable single-source, 0.3=easily switched)
+- revenue_share: fraction of SUPPLIER's total revenue from this specific relationship
+- confidence_score guidelines:
+    0.90-0.95 = publicly confirmed (annual report, press release, IR material)
+    0.75-0.89 = widely reported in industry news / filings
+    0.60-0.74 = estimated / inferred from industry structure
+- Sector: GICS-compliant (Semiconductors, Banks, Automobiles, Pharmaceuticals, etc.)
+- Country: "USA", "South Korea", "Taiwan", "Japan", "Germany", "Netherlands", etc.
+- liquidity_score: large stable companies ~0.70, smaller/volatile ~0.50
+"""
+
+# ─────────────────────────────────────────────────────
+# 섹터별 전문 시스템 프롬프트
+# ─────────────────────────────────────────────────────
+
+SECTOR_SYSTEM_PROMPTS: dict[str, str] = {
+
+    "semiconductor": (
+        "You are a world-class semiconductor & electronics supply chain analyst.\n\n"
+        "For a SEMICONDUCTOR/ELECTRONICS company, supply chain means PHYSICAL COMPONENT FLOWS:\n"
+        "- UPSTREAM SUPPLIERS:\n"
+        "  * Wafer foundries: TSMC, Samsung Foundry, GlobalFoundries, SMIC\n"
+        "  * Specialty chemicals: Shin-Etsu Chemical (SHNEY), Air Products (APD), SK Materials\n"
+        "    Linde (LIN), Merck KGaA — photoresists, etchants, CMP slurry\n"
+        "  * Fab equipment: ASML, Applied Materials (AMAT), Lam Research (LRCX), KLA (KLAC),\n"
+        "    Tokyo Electron (TOELY)\n"
+        "  * Substrates/PCB: Ibiden, Shinko, Simmtech, Samsung Electro-Mechanics (009150)\n"
+        "  * Raw wafers: Shin-Etsu, SUMCO (SUOPY), SK Siltron\n"
+        "- DOWNSTREAM BUYERS:\n"
+        "  * Smartphone OEMs: Apple (AAPL), Samsung (005930), Xiaomi, OPPO\n"
+        "  * Data center/server: Dell (DELL), HPE, AWS (AMZN) — only as chip BUYERS, not vendors\n"
+        "  * Automotive OEMs needing automotive chips\n"
+        "  * Network equipment: Cisco (CSCO), Ericsson\n\n"
+        "Focus on actual physical component transactions. "
+        "Apple is a BUYER of chips/displays, not a supplier.\n"
+    ),
+
+    "financial": (
+        "You are a systemic financial risk analyst specializing in bank ecosystem linkages.\n\n"
+        "For a FINANCIAL SERVICES company (bank, insurer, securities firm), "
+        "'supply chain' means SYSTEMIC FINANCIAL DEPENDENCIES:\n"
+        "- UPSTREAM CRITICAL INFRASTRUCTURE:\n"
+        "  * Core banking platforms: IBM, Oracle (ORCL), Temenos, FIS, Fiserv — only if CRITICAL\n"
+        "  * Settlement/payment networks: Visa (V), Mastercard (MA), SWIFT, local ACH operators\n"
+        "  * Market data providers: Bloomberg, Refinitiv/LSEG — only if core trading dependency\n"
+        "  * Reinsurers: Swiss Re, Munich Re — for insurance companies\n"
+        "  * Cloud infrastructure: only if the bank has a DOCUMENTED strategic cloud dependency\n"
+        "- DOWNSTREAM MAJOR COUNTERPARTIES:\n"
+        "  * Top corporate lending clients by sector (major Korean chaebols for Korean banks)\n"
+        "  * Significant interbank counterparties (bilateral exposure)\n"
+        "  * Government/policy lending programs\n\n"
+        "STRICTLY EXCLUDE: Salesforce, Workday, ServiceNow, general SaaS tools — "
+        "these are procurement items, NOT systemic supply chain dependencies.\n"
+        "dependency_score = systemic risk if this counterparty fails "
+        "(payment network failure ≈ 0.90, single corporate client ≈ 0.10-0.25).\n"
+    ),
+
+    "automotive": (
+        "You are a global automotive supply chain analyst.\n\n"
+        "For an AUTOMOTIVE company, supply chain means PHYSICAL PARTS & MODULES:\n"
+        "- UPSTREAM SUPPLIERS:\n"
+        "  * Tier 1 modules: Bosch, Denso (DNZOY), Hyundai Mobis (012330), Continental, ZF, Aptiv\n"
+        "  * Battery cells: CATL, LG Energy Solution (373220), Samsung SDI (006400), Panasonic\n"
+        "  * Steel/aluminum: POSCO Holdings (005490), ArcelorMittal, Novelis\n"
+        "  * Automotive semiconductors: Infineon (IFNNY), NXP (NXPI), Renesas, ON Semi, STM\n"
+        "  * Tires: Michelin, Bridgestone, Hankook, Kumho\n"
+        "  * Safety/seating/glass: Autoliv, Lear, AGC\n"
+        "- DOWNSTREAM:\n"
+        "  * If OEM: dealer networks, fleet operators, export destinations\n"
+        "  * If Tier-1 parts maker: the OEM customers (Hyundai 005380, Toyota, GM, VW)\n\n"
+        "Focus on: battery supply security, chip shortage exposure, steel pricing, EV transition.\n"
+    ),
+
+    "pharma": (
+        "You are a global pharmaceutical and biotech supply chain analyst.\n\n"
+        "For a PHARMACEUTICAL/BIOTECH company, supply chain means:\n"
+        "- UPSTREAM:\n"
+        "  * Active Pharmaceutical Ingredient (API/원료의약품) suppliers — India/China concentrated\n"
+        "  * Contract Manufacturing Organizations (CMOs): Samsung Biologics (207940), "
+        "Lonza, Catalent, WuXi Biologics\n"
+        "  * Contract Research Organizations (CROs): IQVIA (IQV), Medpace, Charles River\n"
+        "  * Lab equipment/reagents: Thermo Fisher (TMO), Danaher (DHR), Sartorius\n"
+        "  * Packaging: Gerresheimer, West Pharma (WST)\n"
+        "- DOWNSTREAM:\n"
+        "  * Wholesale drug distributors: McKesson (MCK), AmerisourceBergen (ABC), Cardinal Health\n"
+        "  * Hospital/pharmacy chains — if listed\n"
+        "  * International licensing or co-development partners\n\n"
+        "Focus on: API sourcing geography, CMO single-source dependency, regulatory market access.\n"
+    ),
+
+    "energy": (
+        "You are a global energy supply chain analyst.\n\n"
+        "For an ENERGY company (oil, gas, power, renewables), supply chain means:\n"
+        "- UPSTREAM:\n"
+        "  * Crude oil/LNG resource suppliers and E&P joint venture partners\n"
+        "  * Oilfield services: SLB (SLB), Halliburton (HAL), Baker Hughes (BKR)\n"
+        "  * Refinery/petrochemical feedstock suppliers\n"
+        "  * Renewable equipment: Vestas, GE Vernova (GEV), First Solar (FSLR), Siemens Energy\n"
+        "  * Power grid/transformer equipment: ABB, Eaton (ETN), Hitachi Energy\n"
+        "- DOWNSTREAM:\n"
+        "  * Major industrial customers (steelmakers, chemical companies)\n"
+        "  * Power utilities that purchase fuel\n"
+        "  * Pipeline/terminal operators as offtakers\n\n"
+        "Focus on: resource supply security, refinery feedstock, long-term LNG offtake contracts.\n"
+    ),
+
+    "consumer": (
+        "You are a global consumer goods and retail supply chain analyst.\n\n"
+        "For a CONSUMER GOODS or RETAIL company, supply chain means:\n"
+        "- UPSTREAM:\n"
+        "  * Raw material suppliers (agricultural commodities, packaging, textiles)\n"
+        "  * OEM/ODM contract manufacturers — often Southeast Asia based\n"
+        "  * Brand licensing or franchise principals\n"
+        "  * 3PL logistics companies — if listed and critically dependent\n"
+        "- DOWNSTREAM:\n"
+        "  * Major retail channel partners (department stores, e-commerce platforms like AMZN/Coupang)\n"
+        "  * Wholesale distributors (if the company is a brand owner)\n"
+        "  * Key franchise/license sublicensees\n\n"
+        "Focus on: sourcing geography concentration, single-supplier exposure, retail channel power.\n"
+    ),
+
+    "software": (
+        "You are a global technology and software supply chain analyst.\n\n"
+        "For a SOFTWARE/IT SERVICES/INTERNET PLATFORM company, supply chain means:\n"
+        "- UPSTREAM TECHNOLOGY DEPENDENCIES (only CRITICAL ones):\n"
+        "  * Cloud infrastructure: AWS, Azure, GCP — only if the product is ENTIRELY cloud-hosted\n"
+        "  * Database/platform licenses: Oracle (ORCL), Microsoft (MSFT) — if mission-critical\n"
+        "  * AI chip/compute: NVIDIA (NVDA) — only if AI inference is a core product feature\n"
+        "  * Content/data licensors — if proprietary data is the core input\n"
+        "- DOWNSTREAM MAJOR CUSTOMERS:\n"
+        "  * Large enterprise clients accounting for >5% of revenue\n"
+        "  * Platform/marketplace ecosystem partners\n"
+        "  * System integrators (Accenture, Infosys) that implement and resell the product\n\n"
+        "Focus on: cloud provider lock-in risk, key customer concentration, chip/compute dependency.\n"
+        "Do NOT list general HR or CRM tools (Workday, Salesforce) as supply chain dependencies.\n"
+    ),
+
+    "telecom": (
+        "You are a global telecommunications infrastructure supply chain analyst.\n\n"
+        "For a TELECOM company, supply chain means:\n"
+        "- UPSTREAM:\n"
+        "  * Network equipment vendors: Ericsson (ERIC), Nokia (NOK), Samsung Networks, "
+        "Huawei (unlisted, note geopolitical risk), ZTE\n"
+        "  * Tower/infrastructure: American Tower (AMT), Crown Castle (CCI), local tower cos\n"
+        "  * Fiber optic cable: Corning (GLW), Prysmian, LS Cable\n"
+        "  * Handset makers (if bundled subsidized): Samsung, Apple\n"
+        "  * Data center operators for core network nodes\n"
+        "- DOWNSTREAM:\n"
+        "  * Major B2B enterprise clients with dedicated network contracts\n"
+        "  * Government / public safety network contracts\n"
+        "  * MVNOs (Mobile Virtual Network Operators) leasing capacity\n\n"
+        "Focus on: equipment vendor concentration (Huawei replacement cost), 5G capex supply chain.\n"
+    ),
+
+    "battery_materials": (
+        "You are a global battery materials and clean energy supply chain analyst.\n\n"
+        "For a BATTERY / CHEMICAL / MATERIALS company in the EV/energy storage value chain:\n"
+        "- UPSTREAM:\n"
+        "  * Critical mineral miners: lithium (ALB, SQM, Pilbara), nickel, cobalt (Glencore)\n"
+        "  * Precursor/cathode material makers: Umicore, CNGR, Huayou Cobalt\n"
+        "  * Chemical feedstock: BASF, Evonik, specialized fluorine chemical makers\n"
+        "  * Separator/electrolyte suppliers\n"
+        "- DOWNSTREAM:\n"
+        "  * EV OEMs: Hyundai (005380), Tesla (TSLA), BMW, VW\n"
+        "  * Battery cell manufacturers: CATL, LG Energy Solution (373220), Samsung SDI (006400)\n"
+        "  * Energy storage system (ESS) integrators\n\n"
+        "Focus on: critical mineral supply security, China dependency, cathode chemistry transition.\n"
+    ),
+
+    "defense": (
+        "You are a global defense and aerospace supply chain analyst.\n\n"
+        "For a DEFENSE / AEROSPACE company, supply chain means:\n"
+        "- UPSTREAM:\n"
+        "  * Aerospace-grade material suppliers: titanium, carbon fiber (Toray, Hexcel), specialty alloys\n"
+        "  * Avionics/electronics: Raytheon (RTX), L3Harris, Curtiss-Wright\n"
+        "  * Propulsion: Rolls-Royce, GE Aerospace (GE), Safran\n"
+        "  * Guidance/sensors: Leonardo DRS, Elbit Systems\n"
+        "  * Government-approved MRO maintenance providers\n"
+        "- DOWNSTREAM:\n"
+        "  * Primary customer: domestic government / Ministry of Defense (MoD)\n"
+        "  * Export customers: allied nation defense ministries\n"
+        "  * Prime contractors (if this company is a sub-contractor): Lockheed Martin (LMT), Boeing (BA)\n\n"
+        "Focus on: single-customer (government) dependency, export license risk, supply chain security clearance.\n"
+    ),
+
+    "default": (
+        "You are a world-class supply chain analyst with comprehensive knowledge of global "
+        "corporate supply chains (2024).\n\n"
+        "Given a company, identify its most important supply chain relationships:\n"
+        "1. Key SUPPLIERS (upstream): companies providing critical components, materials, "
+        "or services TO the target company\n"
+        "2. Key BUYERS/CUSTOMERS (downstream): companies purchasing products/services "
+        "FROM the target company\n"
+    ),
+}
+
+# ─────────────────────────────────────────────────────
+# 섹터별 DART 사업보고서 검색 키워드
+# ─────────────────────────────────────────────────────
+
+SECTOR_DART_KEYWORDS: dict[str, list[str]] = {
+    "semiconductor": [
+        "주요 매출처", "원재료", "웨이퍼", "화학물질", "장비", "소재",
+        "공급업체", "주요거래처", "원재료 조달", "매출처 구성",
+        "가스", "포토레지스트", "슬러리", "기판",
+    ],
+    "financial": [
+        "주요 차주", "여신", "수신", "주요 거래 기관", "주요 고객사",
+        "결제", "청산", "핵심 거래처", "신용공여", "익스포저",
+        "계열사", "주요 채권", "부실채권", "주요 수탁", "자산운용",
+    ],
+    "automotive": [
+        "협력사", "부품 공급", "납품처", "배터리", "강판",
+        "반도체", "타이어", "주요 고객", "Tier", "원자재",
+        "주요 납품", "부품 협력", "1차 협력사",
+    ],
+    "pharma": [
+        "원료의약품", "위탁생산", "CMO", "CRO", "수탁제조",
+        "라이선스", "공급계약", "주요 매출처", "판매처",
+        "원료 구매", "임상", "바이오의약품",
+    ],
+    "energy": [
+        "원유", "가스", "LNG", "발전", "공급처", "탐사",
+        "파이프라인", "주요 고객", "정제", "광구", "수입처",
+        "연료", "에너지원",
+    ],
+    "consumer": [
+        "매입처", "납품업체", "브랜드", "OEM", "판매채널",
+        "유통", "물류", "주요 매출처", "원재료", "수입처",
+        "가맹점", "대리점",
+    ],
+    "software": [
+        "클라우드", "외주", "데이터센터", "서버", "주요 고객",
+        "라이선스", "유지보수", "파트너", "SI", "플랫폼",
+        "주요 계약", "매출처",
+    ],
+    "telecom": [
+        "통신장비", "기지국", "망", "인프라", "주요 고객",
+        "설비투자", "협력사", "단말", "네트워크 장비",
+        "주파수", "중계기",
+    ],
+    "battery_materials": [
+        "원재료", "리튬", "니켈", "코발트", "양극재", "음극재",
+        "전해질", "분리막", "주요 매출처", "공급업체",
+        "배터리", "광물", "조달",
+    ],
+    "defense": [
+        "주요 고객", "납품처", "정부", "방위사업청", "수출",
+        "원재료", "부품 공급", "협력업체", "계약", "무기체계",
+    ],
+    "default": [
+        "주요 매출처", "주요매출처", "주요 고객", "주요고객",
+        "주요 공급업체", "주요공급업체", "원재료 공급", "원재료공급",
+        "주요 거래처", "주요거래처", "원재료 구매", "부품 구매",
+        "핵심 원재료", "원재료 현황", "매출처별", "공급사 현황",
+        "매출처 구성", "원재료 조달",
+    ],
+}
+
+
+def _detect_sector_type(sector: str, industry: str = "") -> str:
+    """
+    sector/industry 문자열 → 내부 섹터 타입 식별.
+
+    yfinance sector 값 예시: "Technology", "Financial Services",
+    "Consumer Cyclical", "Healthcare", "Energy", "Industrials" 등
+    DART industry 값: 한국 업종코드 문자열
+    """
+    text = f"{sector} {industry}".lower()
+
+    if any(k in text for k in [
+        "semiconductor", "반도체", "memory", "메모리", "wafer", "chip",
+        "electronic component", "전자부품",
+    ]):
+        return "semiconductor"
+
+    if any(k in text for k in [
+        "bank", "financial service", "insurance", "capital market",
+        "금융", "은행", "보험", "증권", "신용", "저축",
+    ]):
+        return "financial"
+
+    if any(k in text for k in [
+        "auto", "vehicle", "자동차", "automotive", "motor company",
+    ]):
+        return "automotive"
+
+    if any(k in text for k in [
+        "pharma", "biotech", "drug", "의약", "바이오", "제약",
+    ]):
+        return "pharma"
+
+    if any(k in text for k in [
+        "oil", "gas", "energy", "power", "utility", "에너지",
+        "발전", "정유", "석유", "가스",
+    ]):
+        return "energy"
+
+    if any(k in text for k in [
+        "battery", "배터리", "chemical", "화학", "material", "소재",
+        "lithium", "리튬",
+    ]):
+        return "battery_materials"
+
+    if any(k in text for k in [
+        "consumer", "retail", "food", "beverage", "소비", "유통",
+        "식품", "백화점", "의류",
+    ]):
+        return "consumer"
+
+    if any(k in text for k in [
+        "software", "internet", "saas", "it service", "소프트웨어",
+        "플랫폼", "data processing", "cloud service",
+    ]):
+        return "software"
+
+    if any(k in text for k in [
+        "telecom", "communication service", "통신", "wireless", "mobile network",
+    ]):
+        return "telecom"
+
+    if any(k in text for k in [
+        "defense", "aerospace", "방산", "항공", "무기", "방위",
+    ]):
+        return "defense"
+
+    return "default"
+
+
+def _build_system_prompt(sector_type: str) -> str:
+    """섹터 타입 → 완성된 시스템 프롬프트 (섹터 전문 지식 + 공통 규칙)."""
+    sector_context = SECTOR_SYSTEM_PROMPTS.get(sector_type, SECTOR_SYSTEM_PROMPTS["default"])
+    return sector_context + _BASE_RULES
+
+NEWS_SHOCK_SYSTEM_PROMPT = """\
+You are a systemic risk analyst specializing in supply chain contagion from geopolitical and economic shocks.
+
+Analyze the provided news and identify which LISTED COMPANIES would be affected through supply chain channels.
+
+RULES:
+- Focus on supply chain impact (not just stock price speculation)
+- Consider: direct exposure, 1st-degree supply chain, industry-wide effects
+- shock_intensity: 1.0=company effectively shut down, 0.7=severe disruption, 0.4=significant but manageable, 0.2=mild impact
+- direction categories:
+  * supply_disruption: company cannot get key inputs
+  * demand_shock: company loses major customers
+  * regulatory: new regulations/bans affecting company
+  * geopolitical: trade war, sanctions, country-level risk
+  * financial: credit, payment, insurance disruption
+- Include both US and Korean stocks with correct tickers
+- Maximum 10 companies, minimum shock_intensity 0.15 to be included
+- For war/sanctions: defense companies get positive (opportunity), not shock (set shock_intensity low)
+"""

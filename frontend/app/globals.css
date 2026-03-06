@@ -1,0 +1,123 @@
+/* ──────────────────────────────────────────────────────────
+   globals.css — 토스/핀다 스타일 Light Design System
+   ────────────────────────────────────────────────────────── */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Pretendard 웹폰트 (CDN) ───────────────────────────── */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+
+/* ── CSS 변수: 디자인 토큰 ──────────────────────────────── */
+:root {
+  /* 배경 */
+  --bg-base:   #F5F7FA;
+  --bg-card:   #FFFFFF;
+  --bg-subtle: #F0F2F5;
+  --bg-hover:  #EBF0FB;
+
+  /* 텍스트 */
+  --text-primary:   #1B1B1B;
+  --text-secondary: #6B7684;
+  --text-tertiary:  #ADB5BD;
+
+  /* 테두리 */
+  --border:       #E5E8EB;
+  --border-strong:#CDD1D5;
+
+  /* Primary 블루 (토스) */
+  --primary:       #3182F6;
+  --primary-light: #EBF2FE;
+  --primary-dark:  #1B64DA;
+
+  /* 리스크 색상 */
+  --risk-high:    #EF4444;
+  --risk-high-bg: #FEF2F2;
+  --risk-mid:     #F59E0B;
+  --risk-mid-bg:  #FFFBEB;
+  --risk-low:     #10B981;
+  --risk-low-bg:  #ECFDF5;
+
+  /* 그림자 */
+  --shadow-card:  0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.04);
+  --shadow-panel: 0 4px 16px 0 rgba(0,0,0,0.08);
+
+  /* 레이아웃 */
+  --sidebar-width:   280px;
+  --analytics-width: 320px;
+  --header-height:   60px;
+}
+
+/* ── 기본 초기화 ─────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── 공통 컴포넌트 클래스 ──────────────────────────────── */
+@layer components {
+  /* 카드 */
+  .card {
+    @apply bg-white rounded-card shadow-card border border-border p-4;
+  }
+
+  /* 섹션 타이틀 */
+  .section-title {
+    @apply text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3;
+  }
+
+  /* 기본 버튼 (Primary) */
+  .btn-primary {
+    @apply w-full bg-primary hover:bg-primary-dark text-white font-semibold
+           py-2.5 px-4 rounded-lg transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* 보조 버튼 */
+  .btn-secondary {
+    @apply w-full bg-bg-subtle hover:bg-bg-hover text-text-primary font-medium
+           py-2.5 px-4 rounded-lg border border-border transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+  }
+
+  /* 뱃지 */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-badge text-xs font-medium;
+  }
+  .badge-high   { @apply badge bg-risk-high-bg    text-risk-high; }
+  .badge-mid    { @apply badge bg-risk-mid-bg     text-risk-mid; }
+  .badge-low    { @apply badge bg-risk-low-bg     text-risk-low; }
+
+  /* 슬라이더 트랙 */
+  input[type="range"] {
+    @apply w-full h-1.5 bg-border rounded-pill appearance-none cursor-pointer accent-primary;
+  }
+
+  /* 스크롤바 커스텀 (Webkit) */
+  ::-webkit-scrollbar        { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track  { background: var(--bg-subtle); }
+  ::-webkit-scrollbar-thumb  { background: var(--border-strong); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+}
+
+/* ── 유틸리티 ──────────────────────────────────────────── */
+@layer utilities {
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #3182F6, #1B64DA);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}

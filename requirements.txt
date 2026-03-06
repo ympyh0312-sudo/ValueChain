@@ -1,0 +1,43 @@
+# ── Web Framework ──────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── Graph DB ───────────────────────────────────
+neo4j>=5.19.0           # Async Neo4j 공식 드라이버
+
+# ── Relational DB ──────────────────────────────
+asyncpg>=0.29.0         # PostgreSQL async 드라이버 (Python 3.12 지원)
+sqlalchemy[asyncio]>=2.0.30
+alembic>=1.13.1         # DB 마이그레이션
+
+# ── Settings & Validation ──────────────────────
+pydantic>=2.7.1
+pydantic-settings>=2.2.1
+python-dotenv>=1.0.1
+
+# ── LLM (Phase 5) ──────────────────────────────
+langchain>=0.2.1
+langchain-openai>=0.1.8        # OpenAI 연동 (gpt-4o-mini 등)
+langchain-core>=0.2.3
+openai>=1.30.1                 # langchain-openai 내부 의존성
+
+# ── Risk Calculation ───────────────────────────
+numpy>=1.26.4           # e^(-λt) 계산, 행렬 연산
+scipy>=1.13.0           # 고급 통계 (Monte Carlo 등)
+
+# ── Entity Matching (Phase 5) ──────────────────
+rapidfuzz>=3.9.1        # Fuzzy ticker 매칭
+
+# ── Market Data (공급망 발견 지원) ─────────────
+yfinance>=0.2.40        # 기업 메타데이터 조회 (sector, country, name)
+
+# ── HTTP Client ────────────────────────────────
+httpx>=0.27.0           # Async HTTP (외부 API 호출)
+
+# ── Logging & Observability ────────────────────
+structlog>=24.1.0       # 구조화 로깅 (JSON 포맷)
+
+# ── Testing ────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.6
